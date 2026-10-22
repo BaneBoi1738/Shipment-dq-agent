@@ -1,0 +1,78 @@
+# Default configuration. Copy to ./config.yaml (or pass --config) to override.
+# Your file is deep-merged over these defaults, so only change what you need.
+
+schema:
+  fuzzy_cutoff: 0.82        # similarity needed to auto-map a renamed column
+  columns:
+    shipment_id:
+      required: true
+      synonyms: [shipment_no, shipment_number, tracking_id, tracking_number, tracking_no, awb, awb_number, consignment_id, consignment_no, ship_id, shipment_ref, shipment_reference, order_id, parcel_id, waybill, waybill_no]
+    carrier:
+      required: true
+      synonyms: [carrier_name, transporter, logistics_partner, scac]
+    origin:
+      required: true
+      synonyms: [origin_city, origin_location, pickup_location, source_city]
+    destination:
+      required: true
+      synonyms: [destination_city, destination_location, delivery_location, dest_city]
+    status:
+      required: true
+      synonyms: [shipment_status, current_status, tracking_status]
+    picked_up_at:
+      required: true
+      synonyms: [pickup_time, pickup_date, pickup_ts, picked_up, shipped_at, ship_date]
+    eta:
+      required: true
+      synonyms: [estimated_arrival, estimated_delivery, expected_delivery, promised_date, eta_time]
+    delivered_at:
+      required: false
+      synonyms: [delivery_time, delivery_date, delivered_on, actual_delivery, delivered_ts]
+    last_update:
+      required: true
+      synonyms: [last_updated, updated_at, last_event_time, last_status_update, last_ping]
+
+statuses:
+  valid: [created, picked_up, in_transit, out_for_delivery, delivered, delayed, exception, cancelled]
+  in_transit_like: [picked_up, in_transit, out_for_delivery, delayed]
+
+# severity: base level. critical_rate: escalate to critical when the share of
+# affected rows reaches it. enabled: false switches a check off.
+checks:
+  missing_required_columns:     { severity: critical }
+  missing_required_values:      { severity: warning, critical_rate: 0.05 }
+  duplicate_shipment_id:        { severity: critical }
+  invalid_status:               { severity: warning, critical_rate: 0.05 }
+  unparseable_timestamps:       { severity: warning, critical_rate: 0.05 }
+  delivered_before_pickup:      { severity: critical }
+  eta_before_pickup:            { severity: warning, critical_rate: 0.05 }
+  delivered_status_missing_timestamp: { severity: warning, critical_rate: 0.05 }
+  timestamp_on_undelivered:     { severity: warning, critical_rate: 0.05 }
+  future_timestamps:            { severity: warning, critical_rate: 0.05, tolerance_hours: 1 }
+  stale_in_transit:             { severity: warning, critical_rate: 0.10, max_age_hours: 48 }
+  data_freshness:               { severity: critical, max_age_hours: 24 }
+
+# Service level for the data product. A run "meets SLA" when the share of clean rows is at
+# least min_clean_rate AND there is no dataset-level critical issue (stale data, missing columns).
+sla:
+  min_clean_rate: 0.95
+
+# Where alerts go. Values are the NAMES of environment variables that hold
+# Slack incoming-webhook URLs, so secrets never live in this file.
+routing:
+  default_webhook_env: SLACK_WEBHOOK_URL
+  rules:
+    - name: data-ops
+      webhook_env: SLACK_WEBHOOK_DATA_OPS
+      checks: [missing_required_columns, missing_required_values, duplicate_shipment_id, invalid_status, unparseable_timestamps]
+    - name: carrier-ops
+      webhook_env: SLACK_WEBHOOK_CARRIER_OPS
+      checks: [stale_in_transit, delivered_before_pickup, eta_before_pickup, delivered_status_missing_timestamp]
+    - name: oncall
+      webhook_env: SLACK_WEBHOOK_ONCALL
+      severity: critical
+
+report:
+  max_findings_in_slack: 8
+  sample_ids: 5
+  post_on_pass: false

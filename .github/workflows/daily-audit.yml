@@ -1,0 +1,46 @@
+name: Daily data quality audit
+
+on:
+  schedule:
+    - cron: "30 3 * * *"   # 03:30 UTC = 09:00 IST
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    env:
+      GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+      GOOGLE_WORKSHEET: ${{ secrets.GOOGLE_WORKSHEET }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      SLACK_WEBHOOK_DATA_OPS: ${{ secrets.SLACK_WEBHOOK_DATA_OPS }}
+      SLACK_WEBHOOK_CARRIER_OPS: ${{ secrets.SLACK_WEBHOOK_CARRIER_OPS }}
+      SLACK_WEBHOOK_ONCALL: ${{ secrets.SLACK_WEBHOOK_ONCALL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[sheets]"
+      - name: Run audit
+        run: |
+          if [ -n "$GOOGLE_SHEET_ID" ]; then
+            dq-agent audit --source sheets --post-slack \
+              --output-md report.md --output-json report.json
+          else
+            echo "No GOOGLE_SHEET_ID secret set: running the demo on synthetic data."
+            dq-agent generate --rows 500 --drift --out data/demo.csv
+            dq-agent audit --source csv --path data/demo.csv \
+              --output-md report.md --output-json report.json
+          fi
+      - name: Add report to the run summary
+        if: always()
+        run: '[ -f report.md ] && cat report.md >> "$GITHUB_STEP_SUMMARY" || true'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dq-report
+          path: |
+            report.md
+            report.json
