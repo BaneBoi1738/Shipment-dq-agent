@@ -94,7 +94,7 @@ class TriageTools:
                 "",
             ]
         path = self.out / "triage_report.md"
-        path.write_text("\n".join(lines))
+        path.write_text("\n".join(lines), encoding="utf-8")
         return path
 
 
